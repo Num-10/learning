@@ -1,0 +1,378 @@
+#### 基础知识
+1. session 与 cookie 的区别和联系
+
+```
+区别：
+    1、cookie数据存放在客户的浏览器上，session数据放在服务器上。
+    2、cookie不是很安全，别人可以分析存放在本地的COOKIE并进行COOKIE欺骗考虑到安全应当使session。
+    3、session会在一定时间内保存在服务器上。当访问增多，会比较占用你服务器的性能
+       考虑到减轻服务器性能方面，应当使用COOKIE。
+    4、单个cookie保存的数据不能超过4K，很多浏览器都限制一个站点最多保存20个cookie。
+联系：
+    session 是依赖于 cookie 的，cookie会将生成的sessionID传给浏览器，浏览器请求带上sessionID标识才能获取信息。
+    如果客户端禁用了cookie，正常情况下session是不能用的。
+    但可通过其他方式传递sessionID，如：放在URL(不安全)，请求体中，请求头中最好加密传输过去。
+```
+
+2. 什么是 OAuth2.0 ？
+
+```
+OAuth2.0 的授权简单理解其实就是获取令牌（token）的过程，OAuth 协议定义了四种获得令牌的授权方式（authorization grant ）如下：
+    授权码（authorization-code）
+    隐藏式（implicit）
+    密码式（password）：
+    客户端凭证（client credentials）
+
+不管我们使用哪一种授权方式，在三方应用申请令牌之前，都必须在系统中去申请身份唯一标识：客户端 ID（client ID）和 客户端密钥（client secret）。这样做可以保证 token 不被恶意使用。
+
+OAuth2.0 授权过程中几个重要的参数：
+    response_type：code 表示要求返回授权码，token 表示直接返回令牌
+    client_id：客户端身份标识
+    client_secret：客户端密钥
+    redirect_uri：重定向地址
+    scope：表示授权的范围，read 只读权限，all 读写权限
+    grant_type：表示授权的方式，AUTHORIZATION_CODE（授权码）、password（密码）、client_credentials（凭证式）、refresh_token 更新令牌
+    state：应用程序传递的一个随机数，用来防止 CSRF 攻击。
+```
+
+3. 
+
+#### PHP
+1. PHP 编译的过程？对 opcode 有没有了解？从 opcode 的角度出发，能否优化一下 php 的速度？
+
+```
+在zend虚拟机执行过程为：
+读入脚本程序字符串，经由词法分析器将其转换为单词符号，接着语法分析器从中发现语法结构后生成抽象语法树
+（PHP7才加入的AST抽象语法树，目的是解耦编译器耦和解释器的解耦，提升了可维护性，
+抽象语法树就处于了编译器和执行器的中间，如果只需要调整相关的语法规则，仅仅需要修改编译器生成抽象语法树的相关规则就行，抽象语法树生成的opline不变。相反你修改新的opcode但是语法规则并不变，只需要修改抽象语法树编译成opline的过程即可。），
+再经静态编译器生成opcode，最后经解释器模拟机器指令来执行每一条opcode。
+
+生成的opcode可以应用编译优化技术如死代码删除、条件常量传播、函数内联等各种优化来精简opcode，达到提高代码的执行性能的目的。
+
+Token 是 PHP 代码被切割成的有意义的标识。PHP7 一共有 137 种 Token
+
+1.Scanning(Lexing) ,将PHP代码转换为语言片段(Tokens)
+2.Parsing, 将Tokens转换成简单而有意义的表达式
+3.Compilation, 将表达式编译成Opocdes
+4.Execution, 顺次执行Opcodes，每次一条，从而实现PHP脚本的功能。
+
+在生成的opcode可以应用编译优化技术如死代码删除、条件常量传播、函数内联等各种优化来精简opcode，达到提高代码的执行性能的目的。
+
+从 5.5 开始，OPcache 成了 PHP 的默认绑定扩展。该扩展通过将 PHP 脚本预编译的字节码存储到共享内存中，省去了每次加载和解析 PHP 脚本的开销。在此基础上又加入了opcode的静态编译优化。这里所述优化通常采用优化器（Optimizer）来管理，编译原理中，一般用优化遍(Opt pass)来描述每一个优化。
+
+整体上说，优化遍分两种：
+    一种是分析pass，是提供数据流、控制流分析信息为转换pass提供辅助信息；
+    一种是转换pass，它会改变生成代码，包括增删指令、改变替换指令、调整指令顺序等，通常每一个pass前后可dump出生成代码的变化。
+    
+PHP编译基本单位op_array、PHP执行最小单位opcode。
+```
+
+2. PHP 变量底层是如何实现的？
+```
+所有的变量都是用一个结构-zval来保存的，zval的定义：
+    typedef struct _zval_struct {
+        zvalue_value value;
+        zend_uint refcount;
+        zend_uchar type;
+        zend_uchar is_ref;
+    } zval;
+其中zvalue_value是真正保存数据的关键部分，zvalue_value是个联合体(union)，
+    typedef union _zvalue_value {
+        long lval;
+        double dval;
+        struct {
+            char *val;
+            int len;
+        } str;
+        HashTable *ht;
+        zend_object_value obj;
+    } zvalue_value;
+PHP根据zval中的type字段来储存一个变量的真正类型，然后根据type来选择如何获取zvalue_value的值，例如，整型 zval.type = IS_LONG 然后去取 zval.value.lval，布尔型则是 zval.type = IS_BOOL 取值为 zval.value.lval 对于bool值来说lval∈(0|1);
+
+比较特别的是资源，在PHP中，资源是个很特别的变量，任何不属于PHP内建的变量类型的变量，都会被看作成资源来进行保存，比如，数据库句柄，打开的文件句柄等等。
+资源 zval.type = IS_RESOURCE 然后取zval.value.lval 此时的lval是个整型的指示器， 然后PHP会再根据这个指示器在PHP内建的一个资源列表中查询相对应的资源。
+```
+
+3. HashTable的实现
+
+```
+哈希表的键名可能是字符串或者是整数。当是字符串时，声明类型为 zend_string；当是整数时，声明为 zend_ulong。
+哈希表的顺序遵循表内元素的插入顺序。
+哈希表的容量是自动伸缩的。
+在内部，哈希表的容量总是2的倍数。
+哈希表中每个元素一定是 zval 类型的数据。
+
+php7 HashTable 的结构体占56个字节（PHP5占72个字节）：
+    struct _zend_array {
+    	zend_refcounted_h gc;
+    	union {
+    		struct {
+    			ZEND_ENDIAN_LOHI_4(
+    				zend_uchar    flags,
+    				zend_uchar    nApplyCount,
+    				zend_uchar    nIteratorsCount,
+    				zend_uchar    reserve)
+    		} v;
+    		uint32_t flags;
+    	} u;
+    	uint32_t          nTableMask;
+    	Bucket           *arData;
+    	uint32_t          nNumUsed;
+    	uint32_t          nNumOfElements;
+    	uint32_t          nTableSize;
+    	uint32_t          nInternalPointer;
+    	zend_long         nNextFreeElement;
+    	dtor_func_t       pDestructor;
+    };
+    
+最重要的是 、arData 存储实际的数组，Bucket 中不再使用指向一个 zval 类型数据的指针，而是直接使用数据本身
+    typedef struct _Bucket {
+    	zval              val;
+    	zend_ulong        h;                /* hash value (or numeric index)   */
+    	zend_string      *key;              /* string key or NULL for numerics */
+    } Bucket;
+    
+哈希定位元素 通过转换表，转换表保存了哈希后的结果与实际存储的节点的映射关系。
+（数组实际按插入顺序存储值和数组索引，键的hash值与数组索引相反数成对存储）
+将转换表存储以 arData 起始指针为起点做镜面映射存储。这样不需要额外的空间存储，在分配 arData 空间的同时也分配了转换表。
+当我们要访问某个元素时，通过哈希算法得到值后按照哈希表分配的元素大小做取模，就能得到我们在转换表中存储的节点索引值。
+
+碰撞冲突
+哈希表的键名可能会被哈希到同一个节点。所以，当我们访问到转换后的节点，我们需要对比键名是否我们查找的。如果不是，我们将通过 zval.u2.next 字段读取链表上的下一个数据。
+```
+
+4. Nginx 与 php-fpm 的通信过程？Nginx 监听端口和 socket 方式，有何区别？ php-fpm 是怎么调用 PHP 代码的？
+
+```
+是什么
+Php-fpm 是 php 的进程管理器，f 代表 fast-cgi,p 代表 process,m 代表 manager
+Php-fpm 是 fast-cgi 进程管理器，他是对于 fast ci 协议的具体实现他负责管理一个进程池，来处理 web 服务器的请求，在 php5.3 版本以后，php-fpm 是内置与 php 中。
+
+如何交互
+fpm 默认通过监听 9000 端口，当请求到 nginx web 服务器时，nginx 打开相应地址下的 php 文件把源码通过 9000 端口发送到 php-fpm，php-fpm 再把源码通过 php 进程进行解析源码，把结果返回到 ningx 在返回客户端。
+
+nginx和php-fpm通信, unix socket还是tcp?
+Nginx和Fastcgi( php-fpm是PHP端的Fastcgi实现 )的通信方式有两种，一种是TCP的方式，一种是unix socket方式。
+在服务器压力不大的情况下，tcp和socket差别不大，但在压力比较满的时候，用套接字方式，效果确实比较好。
+unix socket其实严格意义上应该叫Unix Domain Socket，（一般是.sock）作为socket的唯一标识（描述符），
+需要通信的两个进程引用同一个socket描述符文件就可以建立通道进行通信了。
+Unix domain socket 或者 IPC socket是一种终端，可以使同一台操作系统上的两个或多个进程进行数据通信。
+与管道相比，Unix domain sockets 既可以使用字节流和数据队列，而管道通信则只能通过字节流。
+所以两个进程可以同时打开一个Unix domain sockets来进行通信。
+不过这种通信方式是发生在系统内核里而不会在网络里传播。
+如果nginx做要做负载均衡的话，根本也不要考虑unix socket的方式了，只能采用TCP的方式。
+
+关于CGI的几个概念：
+CGI： 全称是“公共网关接口”(Common Gateway Interface) ，CGI可以用任何一种语言编写，只要这种语言具有标准输入、输出和环境变量。语言与web服务器之间的通讯协议，当请求某个页面时，如'./index.php' web服务器会将请求过来的信息，如请求头信息，数据包信息等传递给语言解析器，其中CGI就是规定web服务器所需传递哪些数据信息、以什么格式传递的协议。
+  web服务器接收到请求后会启动对应的CGI程序，PHP解析器就是其中之一，然后PHP解析器会解析php.ini文件，初始化执行环境，然后处理请求，再以CGI规定的格式返回处理的结果，退出进程，web服务器再把结果返回浏览器
+FastCGI： 像是一个常驻(long-live)型的CGI，用来提高CGI程序性能的，因为标准的CGI对每个请求都会重新解析php.ini，初始化环境，重复执行必定消耗时间。而FastCGI会先启动一个master进程解析php.ini配置，初始化执行环境，然后在启动多个worker。当有请求时，master会传递一个worker，然后立即可以接受下一个请求。这样避免重复的动作。而且当worker不够用时，master可以根据配置预先启动几个worker等待，当然空闲worker太多时，也会停掉一些，这样就提高了性能，也节约了资源。这就是fastcgi的对进程的管理。
+PHP-CGI： 只是个CGI程序，用于解析请求并返回结果，并不会进程管理。
+PHP-FPM： 实现FastCGI这个协议的PHP-CGI的进程管理器，现已集成在PHP内核中，使用--enable-fpm这个编译参数即可。修改了php.ini配置文件之后，PHP-CGI进程没有办法平滑重启，PHP-FPM的处理机制是新的worker用新的配置，已经存在的worker处理完就停止了用，以达到平滑过渡。
+```
+
+5. PHP 是如何连接 MySQL 的？连接池是如何实现的？
+
+```
+php连接mysql有三种方式，分别是：
+mysql拓展（mysql拓展是早期php连接mysql的方式）
+mysqli拓展（只支持到mysql的连接）
+pdo对象（pdo数据对象是php到数据库的数据对象，是php应用中的一个数据库抽象层）
+
+基于swoole扩展，建立MySQL连接基类，初始化连接MySQL连接池数量，调用基类取出一个空闲的连接，执行完成放回连接池，间隔检测连接池数量，增加或减少空闲连接数量达到合理控制连接池。
+```
+
+6. 谈下 PHP 和 Golang 的区别
+
+```
+Go是一种静态编译类型的语言，而PHP是一种动态脚本类型的语言
+Go基本上是一种可用于快速机器代码编译的编程语言，而PHP基本上是一种服务器端脚本，也是一种用于Web开发的通用编程语言。
+Go支持原生协程goroutine并发和channle协程通信，PHP则需要swoole扩展的方式实现协程。
+Go中面向对象功能的通过隐式实现interface的方式实现，PHP直接有面向对象功能。
+Go支持gofmt格式化代码，go test支持单元测试，PHP则通过扩展包的方式实现。
+```
+
+7. Swoole 和 Go 中的协程有何区别？
+```
+Swoole的协程
+程客户端必须在协程的上下文环境中使用。需要先声明一个协程环境，才能使用协程客户端
+是基于单线程的，无法利用多核CPU，同一时间只有一个在调度。
+
+Go 的协程 goroutine
+goroutine 是轻量级的线程，Go 语言从语言层面就支持原生协程。
+Go 协程与线程相比，开销非常小。
+Go 协程的堆栈开销只用2KB，它可以根据程序的需要增大和缩小，
+而线程必须指定堆栈的大小，并且堆栈的大小都是固定的。
+goroutine 是通过 GPM 调度模型实现的。
+M: 表示内核级线程，一个 M 就是一个线程，goroutine 跑在 M 之上的。
+G: 表示一个 goroutine，它有自己的栈。
+P: 全称是 Processor，处理器。它主要用来执行 goroutine 的，同时它也维护了一个 goroutine 队列。
+Go 协程是基于多线程的，可以利用多核 CPU，同一时间可能会有多个协程在执行。
+
+Swoole4提供的defer关键词与Go的defer存在差异：
+Go的defer是绑定函数的，在当前函数退出时会执行defer任务，解决可能出现的资源泄漏；
+Swoole4的defer设计为在协程退出时一起执行，在多层函数调用嵌套中添加大量defer任务，与Coroutine是绑定的。在这个Coroutine结束时，会按照先进后出的顺序，执行defer任务；
+```
+8. static 关键字的不同用处
+
+```
+1. 用 static 关键字来定义静态方法和属性（静态属性不可以由对象通过 -> 操作符来访问）
+    class Foo
+    {
+        public static $my_static = 'foo';
+    
+        public static function staticValue() {
+            return self::$my_static;
+        }
+    }
+2. 静态变量仅在局部函数域中存在，但当程序执行离开此作用域时，其值并不丢失（每次调用 test() 函数都会输出 $a 的值并加一）
+    function test()
+    {
+        static $a = 0;
+        echo $a;
+        $a++;
+    }
+3. 自 PHP 5.3.0 起，PHP 增加了一个叫做后期静态绑定的功能，用于在继承范围内引用静态调用的类。（谁调用优先谁的方法）
+    class A {
+        public static function who() {
+            echo __CLASS__;
+        }
+        public static function test() {
+            static::who(); // 后期静态绑定从这里开始
+        }
+    }
+    
+    class B extends A {
+        public static function who() {
+            echo __CLASS__;
+        }
+    }
+    
+    B::test(); //B
+```
+
+9. laravel 中常用设计模式（除了依赖注入和控制反转，还问到了策略模式和装饰者模式）
+10. composer 自动加载机制（psr-4）
+    
+```
+通过在 composer.json 文件中配置需要加载的类、命名空间，通过执行 composer install 命令自动生成类名和对应的类文件的映射，
+而后通过注册 loadClass 方法，实现对 composer 管理的诸多类的自动加载；
+```
+
+11. php 中常用作用相似，性能差异很大的函数区分及举例
+12. php 的垃圾回收机制
+    ```
+    PHP 可以自动进行内存管理，清除不需要的对象。PHP 使用了引用计数 (reference counting) GC 机制。
+    每个对象都内含一个引用计数器 refcount，每个 reference 连接到对象，计数器加 1。当 reference 离开生存空间或被设为NULL，计数器减1。
+    当某个对象的引用计数器为零时，PHP 知道你将不再需要使用这个对象，释放其所占的内存空间。
+    
+    垃圾的定义：未使用和使用过unset的变量refcount变为0的都不是垃圾，refcount变0的变量GC直接将其内存释放，垃圾是指循环引用导致可能存在内存泄漏的才是垃圾
+    
+    垃圾回收机制：
+    1、以php的引用计数机制为基础（php5.3以前只有该机制）
+    2、同时使用根缓冲区机制，当php发现有存在循环引用的zval时，就会把其投入到根缓冲区（缓冲区用于存放固定数量的 zval（默认是10,000）），
+    当根缓冲区满了的时候（或者调用 gc_collect_cycle() 函数时），PHP 就会执行垃圾回收，
+    以此解决循环引用导致的内存泄漏问题（php5.3开始引入该机制）
+    回收算法步骤如下：
+        步骤 A 把所有可能根（possible roots 都是 zval 变量容器），放在根缓冲区（root buffer）中（称为疑似垃圾)，并确保每个可能的垃圾根（possible garbage root）在缓冲区中只出现一次。
+        步骤 B 被称为模拟删除，对每个根缓冲区中的根 zval 按照深度优先遍历算法遍历所有能遍历到的 zval，并将对应的 refcount 减 1，同时为了避免对同一 zval 多次减 1（因为可能不同的根能遍历到同一个 zval），每次对某个 zval 减 1 后就对其标记为“已减”。
+                需要强调的是，这个步骤中，起初节点 zval 本身不做减 1 操作，但是如果节点 zval 中包含的符号表中有节点又指向了初始的 zval（环形引用），那么这个时候需要对节点 zval 进行减 1 操作；
+        步骤 C 被称为模拟恢复，基本就是步骤 B 的逆运算，但恢复是有条件的。再次对每个缓冲区中的 zval 做深度优先遍历，如果某个 zval 的 refcount 不为 0，则对其加 1，否则保持其为 0。同样每个变量只能恢复一次；
+        步骤 D 清空根缓冲区中的所有根（注意是把所有 zval 从缓冲区中清除而不是销毁它们），然后销毁所有 refcount 为 0 的 zval，并收回其内存，是真实删除的过程。
+    ```
+13. php 的 &引用传递change on write（写时改变）和copy on write（写时复制）
+
+```
+PHP的copy on write机制：
+   $var = "laruence";
+   $var_dup = $var;
+   $var = 1;
+PHP在修改一个变量以前，会首先查看这个变量的refcount，如果refcount大于1，PHP就会执行一个分离的例程， 
+对于上面的代码，当执行到第三行的时候，PHP发现$var指向的zval的refcount大于1，那么PHP就会复制一个新的zval出来，将原zval的refcount减1，并修改symbol_table，
+使得$var和$var_dup分离(Separation)。这个机制就是所谓的copy on write(写时复制)。
+
+PHP的change on write机制：
+   $var = "laruence";
+   $var_ref = &$var;
+   $var_ref = 1;
+第二行执行以后，$var所代表的zval的refcount变为2，并且同时置is_ref为1。
+到第三行的时候，PHP先检查var_ref代表的zval的is_ref字段，如果为1，则不分离
+
+重新赋值自然会重新创建内存空间,但是有一种情况也会发生这样的事 ,那就是在使用到引用符&的时候 , 也会发生复制.
+
+PHP采用引用计数来做简单的垃圾回收
+    $val = "laruence";
+    $ref = &$val;
+    $copy = $val;
+$ref和$val是指向同一个zval的引用, 在PHP5的时候, 我们是通过一个引用计数为2, 并且引用标志位为1来表示这种情况, 当把$val复制给$copy(line 3)的时候, 我们发现$val是一个计数大于1的引用, 所以要产生change on write, 也就是分离. 所以我们需要复制这个zval.
+而在PHP7中, 情况就变得简单了很多, 首先在引用赋值给$ref(line 2)的时候, 生成一个IS_REFERNCE类型, 然后因为此时有俩个变量引用它所以zend_reference这个结构的引用计数zval.value.ref->gc.refcount为2.
+再随后的赋值给$copy(line 3)的时候, 发现$val是一个引用, 于是让$copy指向的是zval.value.ref->val, 也就是字符串值为laruence的zval, 然后把zval的引用计数+1, 也就是zval.value.ref->val.value.str.gc.refcount为2. 并没有产生复制.
+```
+
+14. PHP 页面重定向的方法有哪些
+    ```
+    header('Location: http://www.baidu.com') ;
+    echo '<meta http-equiv="Refresh" content="0;url=http://www.baidu.com" >';
+    echo '<script>window.location.href="www.baidu.com"</script>';
+    ```
+15. PHP 运行模式与运行原理
+
+```
+目前常见的 4 种 PHP 运行模式
+CGI 通用网关接口模式
+FAST-CGI 模式
+CLI 命令行模式
+模块模式
+CGI 通用网关接口模式
+每有一个用户请求，都会先要创建 cgi 的子进程，然后处理请求，处理完后结束这个子进程
+cgi 是一种为了保证 web server 传递过来的数据是标准格式的通用网关接口协议
+比较老，比较原始，大多已经不用了
+
+FAST-CGI 模式
+是 cgi 的升级版本，FastCGI 像是一个常驻 (long-live) 型的 CGI，它可以一直执行着，只要激活后，不会每次都要花费时间去 fork 一次，也是一种协议
+FastCGI 的工作原理是：
+　　(1)、Web Server 启动时载入 FastCGI 进程管理器【PHP 的 FastCGI 进程管理器是 PHP-FPM (php-FastCGI Process Manager)】（IIS ISAPI 或 Apache Module);
+　　(2)、FastCGI 进程管理器自身初始化，启动多个 CGI 解释器进程 (在任务管理器中可见多个 php-cgi.exe) 并等待来自 Web Server 的连接。
+　　(3)、当客户端请求到达 Web Server 时，FastCGI 进程管理器选择并连接到一个 CGI 解释器。Web server 将 CGI 环境变量和标准输入发送到 FastCGI 子进程 php-cgi。
+　　(4)、FastCGI 子进程完成处理后将标准输出和错误信息从同一连接返回 Web Server。当 FastCGI 子进程关闭连接时，请求便告处理完成。FastCGI 子进程接着等待并处理来自 FastCGI 进程管理器（运行在 WebServer 中）的下一个连接。在正常的 CGI 模式中，php-cgi.exe 在此便退出了。
+
+　　在 CGI 模式中，可以想象 CGI 通常有多慢。每一个 Web 请求 PHP 都必须重新解析 php.ini、重新载入全部 dll 扩展并重初始化全部数据结构。使用 FastCGI，所有这些都只在进程启动时发生一次。一个额外的好处是，持续数据库连接 (Persistent database connection) 可以工作。
+
+CLI 命令行模式
+一般使用调用脚本、查看 php 信息时会使用到该模式
+
+php -r”phpinfo ();” |less 分页显示
+
+模块模式
+Apache + mod_php
+lighttp + spawn-fcgi
+nginx + PHP-FPM
+
+运行原理
+PHP-CGI：fast-cgi 是一种协议，而 php-cgi 是实现了这种协议的进程。不过这种实现比较烂。它是单进程的，一个进程处理一个请求，处理结束后进程就销毁
+PHP - FPM：是对 php-cgi 的改进版，它直接管理多个 php-cgi 进程 / 线程。也就是说，php-fpm 是 php-cgi 的进程管理器因此它也算是 fastcgi 协议的实现
+php 的运行原理，就是在服务器启动时，自动载入 PHP-FPM 进程管理器，从而管理多个 PHP-CGI 进程来准备响应用户的请求
+由于 php-cgi 是随服务器启动载入的，所以初始化变量只会发生一次
+
+运行模式和运行原理的区别
+多个运行模式相当于超市的不同入口，运行原理就是进入超市后的固定的行走路线，通过不同的运行模式进入到底层（进入超市）
+```
+
+
+#### Golang
+1. Go 的协程调度机制描述下
+2. channel 的本质和底层是什么？
+3. golang 运行原理和执行过程
+
+```
+运行原理：golang 是先编译为静态二进制可执行文件，再去运行。
+
+go run 的执行过程：
+    创建了两个临时文件夹 b001 和 exe
+    先执行了 compile 命令，然后 link，生成了归档文件.a 和 最终可执行文件
+    最终的可执行文件放在 exe 文件夹里面。
+    命令的最后一步就是执行了可执行文件。
+    
+go build 的执行过程：
+go build 用于编译我们指定的源码文件或代码包以及它们的依赖包。但是注意如果用来编译非命令源码文件，即库源码文件，go build 执行完是不会产生任何结果的。
+这种情况下，go build 命令只是检查库源码文件的有效性，只会做检查性的编译，而不会输出任何结果文件。
+go build 编译命令源码文件，则会在该命令的执行目录中生成一个可执行文件，上面
